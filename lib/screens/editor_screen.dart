@@ -46,7 +46,9 @@ class EditorScreen extends StatelessWidget {
                         child: Column(
                           children: [
                             _buildPreview(context, provider),
-                            const SizedBox(height: 32),
+                            const SizedBox(height: 24),
+                            _buildMagicEraseTool(context, provider),
+                            const SizedBox(height: 24),
                             _buildStandardInfo(context, provider),
                             const SizedBox(height: 48), // Replaced spacer with consistent padding
                             _buildExportButtons(context, provider),
@@ -80,6 +82,59 @@ class EditorScreen extends StatelessWidget {
         child: Image.memory(
           provider.processedImageBytes!,
           fit: BoxFit.contain,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMagicEraseTool(BuildContext context, PassportProvider provider) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).primaryColor.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.2)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.auto_fix_high_rounded, color: Theme.of(context).primaryColor),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Auto Background', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    Text('Convert to white background', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  ],
+                ),
+              ),
+              if (provider.isProcessing)
+                const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                TextButton(
+                  onPressed: () async {
+                    final error = await provider.removeBackground();
+                    if (error != null && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+                    } else if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Background removed successfully!')));
+                    }
+                  },
+                  child: const Text('ERASE'),
+                ),
+            ],
+          ),
         ),
       ),
     );

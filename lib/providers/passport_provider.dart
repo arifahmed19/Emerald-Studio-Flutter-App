@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
+import 'package:http/http.dart' as http;
 import '../models/passport_standard.dart';
 
 class PassportProvider extends ChangeNotifier {
@@ -43,6 +44,43 @@ class PassportProvider extends ChangeNotifier {
     await applyStandard();
   }
 
+  Future<String?> removeBackground() async {
+    // WARNING: Replace with your actual API key!
+    const String apiKey = 'V4jW92ExGe44oN4Gjsi91ZxB'; 
+    
+    if (_processedImageBytes == null) return "No image to process";
+    
+    _isProcessing = true;
+    notifyListeners();
+
+    try {
+      final request = http.MultipartRequest('POST', Uri.parse('https://api.remove.bg/v1.0/removebg'));
+      request.headers['X-Api-Key'] = apiKey;
+      request.files.add(http.MultipartFile.fromBytes('image_file', _processedImageBytes!, filename: 'photo.jpg'));
+      request.fields['size'] = 'auto';
+
+      final response = await request.send();
+      if (response.statusCode == 200) {
+        final bytes = await response.stream.toBytes();
+        
+        // Use background isolate to fill transparency with white for passport standards
+        _processedImageBytes = await compute(_fillBackgroundWhite, bytes);
+        
+        _isProcessing = false;
+        notifyListeners();
+        return null;
+      } else {
+        _isProcessing = false;
+        notifyListeners();
+        return "API Error: ${response.statusCode}";
+      }
+    } catch (e) {
+      _isProcessing = false;
+      notifyListeners();
+      return e.toString();
+    }
+  }
+
   Future<void> applyStandard() async {
     if (_originalImageBytes == null || _selectedStandard == null) return;
     _isProcessing = true;
@@ -69,7 +107,7 @@ class PassportProvider extends ChangeNotifier {
   }
 }
 
-// Top-level function for background processing (Isolate requirement)
+// Background Task: Process image standards
 Future<Uint8List?> _processImageTask(Map<String, dynamic> params) async {
   final Uint8List bytes = params['bytes'];
   final PassportStandard standard = params['standard'];
@@ -77,7 +115,6 @@ Future<Uint8List?> _processImageTask(Map<String, dynamic> params) async {
   final decodedImage = img.decodeImage(bytes);
   if (decodedImage == null) return null;
 
-  // Compute target aspect ratio from standard
   final targetAspect = standard.widthMm / standard.heightMm;
   
   img.Image cropped;
@@ -95,6 +132,22 @@ Future<Uint8List?> _processImageTask(Map<String, dynamic> params) async {
     cropped = img.copyCrop(decodedImage, x: 0, y: offset, width: width, height: newHeight);
   }
 
-  // Use higher compression quality but keep processing optimized
   return Uint8List.fromList(img.encodeJpg(cropped, quality: 95));
+}
+
+// Background Task: Fill transparent background with solid white
+Future<Uint8List?> _fillBackgroundWhite(Uint8List bytes) async {
+  final foreground = img.decodePng(bytes);
+  if (foreground == null) return bytes;
+
+  // Create solid white background image of the same size
+  final background = img.Image(
+    width: foreground.width,
+    height: foreground.height,
+  )..clear(img.ColorRgb8(255, 255, 255));
+
+  // Blend subject onto white background
+  img.compositeImage(background, foreground);
+
+  return Uint8List.fromList(img.encodeJpg(background, quality: 95));
 }
