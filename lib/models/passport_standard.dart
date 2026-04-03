@@ -72,5 +72,13 @@ class PassportStandard {
       description: '35x45 mm',
       flag: '🇦🇺',
     ),
+    PassportStandard(
+      country: 'Bangladesh',
+      name: 'BD Passport',
+      widthMm: 35,
+      heightMm: 45,
+      description: '35x45 mm',
+      flag: '🇧🇩',
+    ),
   ];
 }

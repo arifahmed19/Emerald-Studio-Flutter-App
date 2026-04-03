@@ -1,9 +1,17 @@
 import 'dart:ui';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:image/image.dart' as img;
+import '../core/crypto_service.dart';
 import '../providers/passport_provider.dart';
 import '../providers/auth_provider.dart';
 
@@ -14,298 +22,395 @@ class EditorScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = Provider.of<PassportProvider>(context);
     final authProvider = Provider.of<AuthProvider>(context);
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Editor'),
+        title: const Text('Design Studio'),
         actions: [
           IconButton(
+            onPressed: provider.clear,
             icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => provider.applyStandard(),
+            tooltip: 'Reset Project',
           ),
         ],
       ),
-      body: provider.isProcessing
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text('Processing Image...', style: Theme.of(context).textTheme.bodySmall),
-                ],
-              ),
-            )
-          : provider.processedImageBytes == null
-              ? const Center(child: Text('No image selected'))
-              : Center(
-                  child: SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 700),
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Column(
-                          children: [
-                            _buildPreview(context, provider),
-                            const SizedBox(height: 24),
-                            _buildMagicEraseTool(context, provider),
-                            const SizedBox(height: 24),
-                            _buildStandardInfo(context, provider),
-                            const SizedBox(height: 48),
-                            _buildExportButtons(context, provider, authProvider),
-                            const SizedBox(height: 24),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+      body: _buildBody(context, provider, authProvider, theme),
     );
   }
 
-  Widget _buildPreview(BuildContext context, PassportProvider provider) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white10,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Image.memory(
-          provider.processedImageBytes!,
-          fit: BoxFit.contain,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMagicEraseTool(BuildContext context, PassportProvider provider) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.2)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.auto_fix_high_rounded, color: Theme.of(context).primaryColor),
-              ),
-              const SizedBox(width: 16),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Auto Background', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                    Text('Convert to white background', style: TextStyle(color: Colors.white38, fontSize: 12)),
-                  ],
-                ),
-              ),
-              if (provider.isProcessing)
-                const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-              else
-                TextButton(
-                  onPressed: () async {
-                    final error = await provider.removeBackground();
-                    if (error != null && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
-                    } else if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Background removed successfully!')));
-                    }
-                  },
-                  child: const Text('ERASE'),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStandardInfo(BuildContext context, PassportProvider provider) {
-    final std = provider.selectedStandard!;
-    return RepaintBoundary(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.04),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withOpacity(0.08)),
+  Widget _buildBody(BuildContext context, PassportProvider provider, AuthProvider auth, ThemeData theme) {
+    if (provider.isProcessing) return const Center(child: CircularProgressIndicator());
+    
+    if (provider.processedImageBytes == null || provider.processedImagePath == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline_rounded, size: 48, color: Colors.white24),
+            const SizedBox(height: 16),
+            const Text("Studio requires a valid photo."),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => provider.applyStandard(),
+              child: const Text("Initialize Studio"),
             ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Format', style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 13)),
-                    Text(std.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  ],
-                ),
-                const Divider(height: 32, color: Colors.white10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Dimensions', style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 13)),
-                    Text('${std.widthMm} x ${std.heightMm} mm', 
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold, 
-                        fontSize: 15,
-                        color: Theme.of(context).primaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          ],
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildExportButtons(BuildContext context, PassportProvider provider, AuthProvider authProvider) {
     return Column(
       children: [
-        SizedBox(
-          width: double.infinity,
-          height: 120,
-          child: Row(
-            children: [
-              Expanded(
-                child: _ActionTile(
-                  title: 'Save to Cloud',
-                  icon: Icons.cloud_upload_outlined,
-                  color: Theme.of(context).primaryColor,
-                  onTap: () async {
-                    if (provider.processedImageBytes != null) {
-                      final url = await authProvider.uploadPhoto(
-                        provider.processedImageBytes!,
-                        'passport_${DateTime.now().millisecondsSinceEpoch}.jpg',
-                      );
-                      
-                      if (url != null) {
-                        await provider.addToHistory(url, provider.selectedStandard!.name);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Successfully uploaded and saved to history!')),
-                          );
-                        }
-                      }
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _ActionTile(
-                  title: 'Print Preview',
-                  icon: Icons.print_rounded,
-                  color: Theme.of(context).colorScheme.secondary,
-                  onTap: () => _generatePdf(context, provider),
-                ),
-              ),
-            ],
+        // 1. Studio Preview Area
+        Expanded(
+          child: Center(
+            child: _buildPreviewDisplay(provider, theme),
           ),
         ),
+        
+        // 2. Control Panel
+        _buildControlPanel(context, provider, auth, theme),
       ],
     );
   }
 
-  Future<void> _generatePdf(BuildContext context, PassportProvider provider) async {
-    final pdf = pw.Document();
-    
-    // Load a Unicode-supported font for the PDF
-    final font = await PdfGoogleFonts.outfitRegular();
-    
-    final image = pw.MemoryImage(provider.processedImageBytes!);
+  Widget _buildPreviewDisplay(PassportProvider provider, ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 40, spreadRadius: -10)],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Image.memory(
+              provider.processedImageBytes!,
+              key: ValueKey(provider.processedImageBytes.hashCode),
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const Center(child: Icon(Icons.broken_image_rounded, size: 50, color: Colors.white24)),
+            ),
+      ),
+    );
+  }
+
+  Widget _buildControlPanel(BuildContext context, PassportProvider provider, AuthProvider auth, ThemeData theme) {
+    final emerald = theme.primaryColor;
     final std = provider.selectedStandard!;
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        theme: pw.ThemeData.withFont(base: font),
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Column(
+        children: [
+          // Background Eraser Tool
+          _buildActionButton(
+            label: 'Auto AI Background',
+            subtitle: 'Apply Studio White background',
+            icon: Icons.auto_fix_high_rounded,
+            color: emerald,
+            onPressed: () async {
+              final err = await provider.removeBackground();
+              if (err != null && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+              }
+            },
+          ),
+          
+          const SizedBox(height: 20),
+          
+          // Passport Info Card
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, color: emerald, size: 20),
+                const SizedBox(width: 12),
+                Expanded(child: Text('${std.name} (${std.widthMm}x${std.heightMm}mm)', style: const TextStyle(fontWeight: FontWeight.w600))),
+                Text('300 DPI Ready', style: TextStyle(color: Colors.white30, fontSize: 11)),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Export Options
+          Row(
             children: [
-              pw.Text('Passport Photo Sheet - ${std.name}', style: const pw.TextStyle(fontSize: 20)),
-              pw.SizedBox(height: 10),
-              pw.Text('Size: ${std.widthMm}x${std.heightMm}mm'),
-              pw.SizedBox(height: 30),
-              pw.Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: List.generate(
-                  8,
-                  (index) => pw.Container(
-                    width: std.widthMm * PdfPageFormat.mm,
-                    height: std.heightMm * PdfPageFormat.mm,
-                    child: pw.Image(image),
-                  ),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _generatePdf(context, provider),
+                  icon: const Icon(Icons.print_rounded),
+                  label: const Text('PDF Print'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white10, foregroundColor: Colors.white, padding: const EdgeInsets.all(16)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _downloadImage(context, provider, 'jpg'),
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('JPEG'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white10, foregroundColor: Colors.white, padding: const EdgeInsets.all(16)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _downloadImage(context, provider, 'png'),
+                  icon: const Icon(Icons.file_download_outlined),
+                  label: const Text('PNG'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white10, foregroundColor: Colors.white, padding: const EdgeInsets.all(16)),
                 ),
               ),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 12),
+
+          // Primary Action: Save to Cloud
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _uploadAndSave(context, provider),
+              icon: const Icon(Icons.cloud_upload_rounded),
+              label: const Text('Sync to History'),
+              style: ElevatedButton.styleFrom(backgroundColor: emerald, foregroundColor: Colors.black, padding: const EdgeInsets.all(20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+            ),
+          ),
+        ],
       ),
     );
-
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
-}
 
-class _ActionTile extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _ActionTile({
-    required this.title,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: color.withOpacity(0.2)),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 32, color: color),
-              const SizedBox(height: 12),
-              Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: color)),
-            ],
-          ),
+  Widget _buildActionButton({required String label, required String subtitle, required IconData icon, required Color color, required VoidCallback onPressed}) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withOpacity(0.15), shape: BoxShape.circle), child: Icon(icon, color: color)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white24),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _downloadImage(BuildContext context, PassportProvider provider, String format) async {
+    try {
+      if (provider.processedImageBytes == null || provider.selectedStandard == null) return;
+      
+      final std = provider.selectedStandard!;
+      if (context.mounted && !kIsWeb) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Generating A4 Grid as ${format.toUpperCase()}...')));
+      }
+
+      // Generate A4 rasterized Grid
+      Uint8List bytes = await compute((Map<String, dynamic> args) {
+        final rawBytes = args['bytes'] as Uint8List;
+        final wMm = args['wMm'] as double;
+        final hMm = args['hMm'] as double;
+        final formatOut = args['format'] as String;
+        
+        final photo = img.decodeImage(rawBytes);
+        if (photo == null) return rawBytes;
+
+        // A4 at 300 DPI
+        const int a4Width = 2480;
+        const int a4Height = 3508;
+        const double ppMm = 300 / 25.4;
+        
+        final int photoWidth = (wMm * ppMm).round();
+        final int photoHeight = (hMm * ppMm).round();
+        
+        final resizedPhoto = img.copyResize(photo, width: photoWidth, height: photoHeight, interpolation: img.Interpolation.linear);
+        final canvas = img.Image(width: a4Width, height: a4Height, numChannels: 3)..clear(img.ColorRgb8(255, 255, 255));
+        
+        const int cols = 2;
+        const int rows = 4;
+        final int spacing = (12 * ppMm).round();
+        
+        final int startX = (a4Width - (cols * photoWidth + (cols - 1) * spacing)) ~/ 2;
+        final int startY = (a4Height - (rows * photoHeight + (rows - 1) * spacing)) ~/ 2;
+        
+        for (int r = 0; r < rows; r++) {
+          for (int c = 0; c < cols; c++) {
+            int x = startX + c * (photoWidth + spacing);
+            int y = startY + r * (photoHeight + spacing);
+            img.compositeImage(canvas, resizedPhoto, dstX: x, dstY: y);
+            img.drawRect(canvas, x1: x, y1: y, x2: x + photoWidth, y2: y + photoHeight, color: img.ColorRgb8(200, 200, 200), thickness: 2);
+          }
+        }
+
+        if (formatOut == 'png') {
+          return Uint8List.fromList(img.encodePng(canvas));
+        } else {
+          return Uint8List.fromList(img.encodeJpg(canvas, quality: 92));
+        }
+      }, {
+        'bytes': provider.processedImageBytes!,
+        'wMm': std.widthMm,
+        'hMm': std.heightMm,
+        'format': format.toLowerCase()
+      });
+
+      if (kIsWeb) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('To save: Right-click the photo and select "Save Image As..."'),
+            duration: Duration(seconds: 4),
+          ));
+        }
+        return;
+      }
+
+      // Safe Mobile/Desktop execution (Not Web)
+      String targetPath = '';
+      if (Platform.isAndroid) {
+        final directory = Directory('/storage/emulated/0/Download');
+        if (await directory.exists()) {
+          targetPath = directory.path;
+        } else {
+          final extDir = await getExternalStorageDirectory();
+          if (extDir != null) targetPath = extDir.path;
+        }
+      } else {
+        // iOS or other platforms
+        final docDir = await getApplicationDocumentsDirectory();
+        targetPath = docDir.path;
+      }
+
+      if (targetPath.isNotEmpty) {
+        final file = File('$targetPath/passport_studio_export_${DateTime.now().millisecondsSinceEpoch}.$format');
+        await file.writeAsBytes(bytes);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Saved locally: ${file.path}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+          ));
+        }
+      } else {
+        throw Exception("Could not find suitable directory to save file.");
+      }
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export Error: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _uploadAndSave(BuildContext context, PassportProvider provider) async {
+    try {
+      final fileName = 'studio_photo_${DateTime.now().millisecondsSinceEpoch}.bin';
+      final path = 'public/$fileName';
+      
+      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final encryptedBytes = await CryptoService.encryptImage(provider.processedImageBytes!, userId);
+
+      await Supabase.instance.client.storage.from('photos').uploadBinary(path, encryptedBytes, fileOptions: const FileOptions(contentType: 'application/octet-stream'));
+      final publicUrl = Supabase.instance.client.storage.from('photos').getPublicUrl(path);
+      
+      await provider.addToHistory(publicUrl, provider.selectedStandard!.name);
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Studio Project Saved securely to Cloud')));
+    } catch (e) {
+       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload Error: $e')));
+    }
+  }
+
+  Future<void> _generatePdf(BuildContext context, PassportProvider provider) async {
+    try {
+      if (provider.processedImageBytes == null) throw Exception("Photo not processed yet.");
+      
+      final pdf = pw.Document();
+      final font = await PdfGoogleFonts.outfitRegular();
+      final image = pw.MemoryImage(provider.processedImageBytes!);
+      final std = provider.selectedStandard!;
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          theme: pw.ThemeData.withFont(base: font),
+          build: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                // ─── PHOTO GRID ───
+                pw.Wrap(
+                  spacing: 12, runSpacing: 12,
+                  children: List.generate(8, (i) => pw.Container(
+                    width: std.widthMm * PdfPageFormat.mm,
+                    height: std.heightMm * PdfPageFormat.mm,
+                    decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey300, width: 0.2)),
+                    child: pw.Image(image),
+                  )),
+                ),
+
+                pw.Spacer(), // Push content to bottom
+
+                // ─── FOOTER DETAILS ───
+                pw.Container(
+                  padding: const pw.EdgeInsets.only(top: 10),
+                  decoration: const pw.BoxDecoration(
+                    border: pw.Border(top: pw.BorderSide(color: PdfColors.grey200, width: 1)),
+                  ),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text('STUDIO EXPORT DETAILS', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, letterSpacing: 1.2)),
+                          pw.SizedBox(height: 4),
+                          pw.Text('Standard: ${std.name}', style: pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
+                          pw.Text('Dimensions: ${std.widthMm}mm x ${std.heightMm}mm', style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+                        ],
+                      ),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                           pw.Text('Generated by', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
+                           pw.Text('Emerald Studio', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.grey800)),
+                           pw.Text('Professional AI ID Solutions', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600, fontStyle: pw.FontStyle.italic)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      await Printing.layoutPdf(onLayout: (format) async => pdf.save());
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Print Studio Error: $e')));
+    }
   }
 }

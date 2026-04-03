@@ -1,4 +1,4 @@
-# 📸 Passport Photo Studio
+# 📸 Emerald Studio
 
 A professional-grade, unified Flutter application designed to automate the creation of official passport photos for any country. Built with a focus on high-end aesthetics (**Glassmorphism** & **Emerald Palette**) and cross-platform performance.
 

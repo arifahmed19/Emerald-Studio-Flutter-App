@@ -90,7 +90,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Premium Passport Photo Studio',
+                              'Premium Emerald Studio',
                               style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13),
                             ),
                             const SizedBox(height: 32),

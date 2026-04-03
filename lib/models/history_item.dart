@@ -15,7 +15,7 @@ class HistoryItem {
 
   factory HistoryItem.fromJson(Map<String, dynamic> json) {
     return HistoryItem(
-      id: json['id'],
+      id: json['id'].toString(),
       userId: json['user_id'],
       imageUrl: json['image_url'],
       standardName: json['standard_name'],

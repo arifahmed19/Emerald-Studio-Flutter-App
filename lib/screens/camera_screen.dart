@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
 import '../providers/passport_provider.dart';
@@ -159,12 +160,22 @@ class _GuidedCameraScreenState extends State<GuidedCameraScreen> {
     try {
       final XFile photo = await _controller!.takePicture();
       if (mounted) {
-        final bytes = await photo.readAsBytes();
         final provider = Provider.of<PassportProvider>(context, listen: false);
-        await provider.setImageBytes(bytes);
+        
+        // Show loading state immediately by navigating
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/editor');
         }
+        
+        // Delay heavily prevents jank from route transition
+        Future.delayed(const Duration(milliseconds: 200), () async {
+          if (kIsWeb) {
+             final bytes = await photo.readAsBytes();
+             provider.setImageBytes(bytes);
+          } else {
+             provider.setImageFile(photo.path);
+          }
+        });
       }
     } catch (e) {
       debugPrint('Capture error: $e');

@@ -12,10 +12,10 @@ import 'package:passport_photo_studio/main.dart';
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const PassportPhotoStudioApp());
+    await tester.pumpWidget(const EmeraldStudioApp(showIntro: false));
 
     // Verify that our app displays the Studio title.
-    expect(find.text('Studio'), findsOneWidget);
+    expect(find.text('Emerald Studio'), findsOneWidget);
     expect(find.text('Capture'), findsOneWidget);
 
     // Verify that '1' is not present (old boilerplate)

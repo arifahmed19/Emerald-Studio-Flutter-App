@@ -47,6 +47,9 @@ dependencies:
   path: ^1.8.3
   supabase_flutter: ^2.5.3
   http: ^1.2.2
+  shared_preferences: ^2.2.3
+  url_launcher: ^6.3.2
+  encrypt: ^5.0.3
 
 dev_dependencies:
   flutter_test:
@@ -58,6 +61,18 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/logo/master_logo.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "assets/logo/master_logo.png"
+    background_color: "#051e18"
+    theme_color: "#10b981"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

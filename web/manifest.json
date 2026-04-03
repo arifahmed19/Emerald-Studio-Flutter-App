@@ -1,11 +1,11 @@
 {
-    "name": "passport_photo_studio",
-    "short_name": "passport_photo_studio",
+    "name": "Emerald Studio",
+    "short_name": "Emerald Studio",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#051e18",
+    "theme_color": "#10b981",
+    "description": "Professional automated studio photos.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
